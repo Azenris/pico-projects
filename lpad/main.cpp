@@ -3,10 +3,25 @@
 #include <math.h>
 
 #include "pico/stdlib.h"
-#include "rgb_keypad.h"
+#include "pico/rand.h" 
+#include "pico/util/queue.h"
 #include "bsp/board.h"
 #include "tusb.h"
 #include "usb_descriptors.h"
+#include "rgb_keypad.h"
+#include "random.h"
+
+template <typename T>
+T min( T a, T b )
+{
+	return a <= b ? a : b;
+}
+
+template <typename T>
+T max( T a, T b )
+{
+	return a >= b ? a : b;
+}
 
 enum
 {
@@ -27,6 +42,8 @@ enum
 	 KEY_14 = ( 1 << 14 ),
 	 KEY_15 = ( 1 << 15 ),
 };
+
+constexpr u32 MAX_KEY_QUEUE_ELEMENTS = 16;
 
 constexpr Colour COLOUR_RED = { 31, 0, 0 };
 constexpr Colour COLOUR_GREEN = { 0, 31, 0 };
@@ -50,6 +67,12 @@ constexpr Colour colourThemes[ APP_MODE::COUNT ] =
 	COLOUR_MAGENTA,				// APP_MODE::GAME_FLASHOUT
 };
 
+struct QueuedKey
+{
+	u8 keys[ 6 ] = {};
+	u8 modifiers = 0;
+};
+
 struct App
 {
 	APP_MODE mode;
@@ -57,6 +80,8 @@ struct App
 	u32 hidTaskRate;
 	u32 updateTimer;
 	u32 updateRate;
+	queue_t keyQueue;
+	u8 flashoutLevel;
 };
 
 App app;
@@ -73,102 +98,32 @@ void app_switch_mode( APP_MODE newMode )
 		rgbKeypad.set_colour( i, colourThemes[ i ], 0.075f );
 	}
 
-	rgbKeypad.set_colour( newMode, colourThemes[ newMode ], 1.0f );
-}
-
-static void send_hid_report( u8 reportID, u32 btn )
-{
-	if ( !tud_hid_ready() )
-		return;
-
-	switch ( reportID )
+	switch ( newMode )
 	{
-	case REPORT_ID_KEYBOARD:
+	case PROGRAMMING_LBOE:
+		rgbKeypad.set_colour( newMode, colourThemes[ newMode ], 1.0f );
+
+		for ( i32 i = 4; i < 4; ++i )
 		{
-			// use to avoid send multiple consecutive zero report for keyboard
-			static bool hadKey = false;
-
-			if ( btn )
-			{
-				u8 keycode[ 6 ] = { 0 };
-				keycode[ 0 ] = HID_KEY_A;
-
-				tud_hid_keyboard_report( REPORT_ID_KEYBOARD, 0, keycode );
-				hadKey = true;
-			}
-			else
-			{
-				// send empty key report if previously has key pressed
-				if ( hadKey )
-					tud_hid_keyboard_report( REPORT_ID_KEYBOARD, 0, NULL );
-				hadKey = false;
-			}
+			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.25f );
 		}
 		break;
 
-	case REPORT_ID_MOUSE:
-		{
-			i32 const delta = 5;
+	case PROGRAMMING_GBC:
+		rgbKeypad.set_colour( newMode, colourThemes[ newMode ], 1.0f );
 
-			// no button, right + down, no scroll, no pan
-			tud_hid_mouse_report( REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0 );
+		for ( i32 i = 4; i < 4; ++i )
+		{
+			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.25f );
 		}
 		break;
 
-	case REPORT_ID_CONSUMER_CONTROL:
+	case GAME_FLASHOUT:
 		{
-			// use to avoid send multiple consecutive zero report
-			static bool hadKey = false;
-
-			if ( btn )
-			{
-				// volume down
-				u16 volumeDec = HID_USAGE_CONSUMER_VOLUME_DECREMENT;
-				tud_hid_report( REPORT_ID_CONSUMER_CONTROL, &volumeDec, 2 );
-				hadKey = true;
-			}
-			else
-			{
-				// send empty key report (release key) if previously has key pressed
-				u16 emptyKey = 0;
-				if ( hadKey )
-					tud_hid_report( REPORT_ID_CONSUMER_CONTROL, &emptyKey, 2 );
-				hadKey = false;
-			}
+			i32 lvl = app.flashoutLevel;
+			i32 startWithLigjts = min( static_cast<i32>( 15 ), irandom_range( 1 + lvl / 10, lvl / 3 ) );
+			// TODO : 
 		}
-		break;
-
-	case REPORT_ID_GAMEPAD:
-		{
-			// use to avoid send multiple consecutive zero report for keyboard
-			static bool hadKey = false;
-
-			hid_gamepad_report_t report =
-			{
-				.x   = 0, .y = 0, .z = 0, .rz = 0, .rx = 0, .ry = 0,
-				.hat = 0, .buttons = 0
-			};
-
-			if ( btn )
-			{
-				report.hat = GAMEPAD_HAT_UP;
-				report.buttons = GAMEPAD_BUTTON_A;
-				tud_hid_report( REPORT_ID_GAMEPAD, &report, sizeof( report ) );
-
-				hadKey = true;
-			}
-			else
-			{
-				report.hat = GAMEPAD_HAT_CENTERED;
-				report.buttons = 0;
-				if ( hadKey )
-					tud_hid_report( REPORT_ID_GAMEPAD, &report, sizeof( report ) );
-				hadKey = false;
-			}
-		}
-		break;
-
-	default:
 		break;
 	}
 }
@@ -246,8 +201,40 @@ void tud_hid_set_report_cb( u8 instance, u8 reportID, hid_report_type_t reportTy
 	}
 }
 
+static void add_key( QueuedKey key )
+{
+	queue_try_add( &app.keyQueue, &key );
+	key = {};
+	queue_try_add( &app.keyQueue, &key );
+}
+
+static void add_key( u8 modifiers, u8 key )
+{
+	QueuedKey qKey = { .keys = { key }, .modifiers = modifiers };
+	queue_try_add( &app.keyQueue, &qKey );
+	qKey = {};
+	queue_try_add( &app.keyQueue, &qKey );
+}
+
 int main()
 {
+	{
+		u64 seed[ 9 ] =
+		{
+			get_rand_64(),
+			get_rand_64(),
+			get_rand_64(),
+			get_rand_64(),
+			get_rand_64(),
+			get_rand_64(),
+			get_rand_64(),
+			get_rand_64(),
+			board_millis() * 0x1986,
+		};
+
+		random_set_seed( seed );
+	}
+
 	board_init();
 	tusb_init();
 
@@ -258,6 +245,9 @@ int main()
 	app.hidTaskRate = app.hidTaskTimer;
 	app.updateTimer = 16;
 	app.updateRate = app.updateTimer;
+	app.flashoutLevel = 0;
+
+	queue_init( &app.keyQueue, sizeof( QueuedKey ), MAX_KEY_QUEUE_ELEMENTS );
 
 	app_switch_mode( APP_MODE::PROGRAMMING_GBC );
 
@@ -288,9 +278,17 @@ int main()
 			{
 				tud_remote_wakeup();
 			}
-			else
+			else if ( tud_hid_ready() )
 			{
-				send_hid_report( REPORT_ID_KEYBOARD, btn );
+				if ( !queue_is_empty( &app.keyQueue ) )
+				{
+					QueuedKey key;
+
+					if ( queue_try_remove( &app.keyQueue, &key ) )
+					{
+						tud_hid_keyboard_report( REPORT_ID_KEYBOARD, key.modifiers, key.keys );
+					}
+				}
 			}
 		}
 
@@ -325,12 +323,56 @@ int main()
 				switch ( app.mode )
 				{
 				case APP_MODE::PROGRAMMING_LBOE:
+					{
+						constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
+
+						if ( keysPressed & KEY_4 )
+						{
+							// Setup working on the LostBookOfElements game
+							add_key( modPrefix, HID_KEY_F1 );
+						}
+						else if ( keysPressed & KEY_5 )
+						{
+							// Compile LostBookOfElements Game
+							add_key( modPrefix, HID_KEY_F2 );
+						}
+						else if ( keysPressed & KEY_6 )
+						{
+							// Compile LostBookOfElements Engine+Game
+							add_key( modPrefix, HID_KEY_F3 );
+						}
+						else if ( keysPressed & KEY_7 )
+						{
+							// Open LostBookOfElements Game Folder
+							add_key( modPrefix, HID_KEY_F4 );
+						}
+					}
 					break;
 
 				case APP_MODE::PROGRAMMING_GBC:
-					if ( keysPressed & KEY_4 )
 					{
-						// TODO : compile/setup enviro etc...
+						constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
+
+						if ( keysPressed & KEY_4 )
+						{
+							// Setup working on the MoondustCompanions game
+							add_key( modPrefix, HID_KEY_F1 );
+						}
+						else if ( keysPressed & KEY_5 )
+						{
+							// Compile MoondustCompanions Game
+							add_key( modPrefix, HID_KEY_F2 );
+						}
+						else if ( keysPressed & KEY_6 )
+						{
+							// currently unused
+							add_key( modPrefix, HID_KEY_F3 );
+						}
+						else if ( keysPressed & KEY_7 )
+						{
+							// Open MoondustCompanions Game Folder
+							add_key( modPrefix, HID_KEY_F4 );
+						}
 					}
 					break;
 
@@ -351,6 +393,8 @@ int main()
 			rgbKeypad.update();
 		}
 	}
+
+	queue_free( &app.keyQueue );
 
 	return 0;
 }

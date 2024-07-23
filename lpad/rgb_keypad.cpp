@@ -22,7 +22,7 @@ void RGBKeypad::init( f32 defaultBrightness )
 
 	ledData = buffer + 4;
 
-    set_brightness( defaultBrightness );
+	set_brightness( defaultBrightness );
 
 	i2c_init( i2c0, 400000 );
 

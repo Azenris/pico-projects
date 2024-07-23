@@ -24,7 +24,7 @@ project( ${PROJECT} C CXX )
 
 pico_sdk_init()
 
-add_executable( ${PROJECT} main.cpp rgb_keypad.cpp usb_descriptors.c )
+add_executable( ${PROJECT} main.cpp rgb_keypad.cpp random.cpp usb_descriptors.c )
 
 # Make sure TinyUSB can find tusb_config.h
 target_include_directories( ${PROJECT} PRIVATE ${CMAKE_CURRENT_LIST_DIR} )
@@ -33,6 +33,8 @@ target_link_libraries( ${PROJECT} PRIVATE pico_stdlib )
 target_link_libraries( ${PROJECT} PRIVATE hardware_i2c )
 target_link_libraries( ${PROJECT} PRIVATE hardware_spi )
 target_link_libraries( ${PROJECT} PRIVATE pico_unique_id )
+target_link_libraries( ${PROJECT} PRIVATE pico_util )
+target_link_libraries( ${PROJECT} PRIVATE pico_rand )
 target_link_libraries( ${PROJECT} PRIVATE tinyusb_board )
 target_link_libraries( ${PROJECT} PRIVATE tinyusb_device )
 
