@@ -20,9 +20,13 @@ struct RGBKeypad
 	void free();
 
 	void set_brightness( f32 brightness );
+	f32 get_brightness( u8 index );
+
+	void set_colour( u8 r, u8 g, u8 b );
 	void set_colour( u8 x, u8 y, u8 r, u8 g, u8 b );
 	void set_colour( u8 index, u8 r, u8 g, u8 b );
 	void set_colour( u8 index, u8 r, u8 g, u8 b, f32 brightness );
+	void set_colour( Colour colour );
 	void set_colour( u8 index, Colour colour );
 	void set_colour( u8 index, Colour colour, f32 brightness );
 

@@ -38,6 +38,8 @@ target_link_libraries( ${PROJECT} PRIVATE pico_rand )
 target_link_libraries( ${PROJECT} PRIVATE tinyusb_board )
 target_link_libraries( ${PROJECT} PRIVATE tinyusb_device )
 
+target_compile_definitions( ${PROJECT} PRIVATE "$<$<CONFIG:Debug>:DEBUG>$<$<CONFIG:Release>:NDEBUG>" )
+
 pico_add_extra_outputs( ${PROJECT} )
 
 add_compile_options( -Wall -Wno-format )

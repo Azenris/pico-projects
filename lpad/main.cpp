@@ -11,6 +11,8 @@
 #include "rgb_keypad.h"
 #include "random.h"
 
+#define ARRAY_LENGTH( arr )		( sizeof( arr ) / sizeof( arr[ 0 ] ) )
+
 template <typename T>
 T min( T a, T b )
 {
@@ -22,6 +24,60 @@ T max( T a, T b )
 {
 	return a >= b ? a : b;
 }
+
+struct PhotonSmashPredefinedLevel
+{
+	u8 lightsCount;
+	u8 lights[ RGBKeypad::NUM_PADS ];
+};
+
+constexpr PhotonSmashPredefinedLevel photonSmashPredefinedLevels[] =
+{
+	{
+		.lightsCount = 5,
+		.lights = { 1, 4, 5, 6, 9 }
+	},
+	/*{
+		.lightsCount = 4,
+		.lights = { 0, 3, 12, 15 }
+	},
+	{
+		.lightsCount = 4,
+		.lights = { 3, 6, 9, 12 }
+	},
+	{
+		.lightsCount = 4,
+		.lights = { 5, 6, 9, 10 }
+	},
+	{
+		.lightsCount = 5,
+		.lights = { 4, 8, 11, 13, 15 }
+	},
+	{
+		.lightsCount = 4,
+		.lights = { 0, 5, 10, 15 }
+	},
+	{
+		.lightsCount = 6,
+		.lights = { 1, 2, 4, 5, 6, 7 }
+	},
+	{
+		.lightsCount = 8,
+		.lights = { 1, 2, 5, 6, 9, 10, 13, 14 }
+	},
+	{
+		.lightsCount = 12,
+		.lights = { 0, 1, 2, 3, 4, 7, 8, 11, 12, 13, 14, 15 }
+	},
+	{
+		.lightsCount = 14,
+		.lights = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15 }
+	},
+	{
+		.lightsCount = 16,
+		.lights = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
+	},*/
+};
 
 enum
 {
@@ -45,6 +101,7 @@ enum
 
 constexpr u32 MAX_KEY_QUEUE_ELEMENTS = 16;
 
+constexpr Colour COLOUR_WHITE = { 31, 31, 31 };
 constexpr Colour COLOUR_RED = { 31, 0, 0 };
 constexpr Colour COLOUR_GREEN = { 0, 31, 0 };
 constexpr Colour COLOUR_BLUE = { 0, 0, 31 };
@@ -56,21 +113,37 @@ enum APP_MODE
 {
 	PROGRAMMING_LBOE,
 	PROGRAMMING_GBC,
-	GAME_FLASHOUT,
+	GAME_PHOTON_SMASH,
 	COUNT,
+};
+
+enum PHOTON_SMASH_STATE
+{
+	GAME,
+	WIN_ANIMATION,
+	UNSOLVABLE_ANIMATION,
 };
 
 constexpr Colour colourThemes[ APP_MODE::COUNT ] =
 {
 	COLOUR_AQUA,				// APP_MODE::PROGRAMMING_LBOE
 	COLOUR_GREEN,				// APP_MODE::PROGRAMMING_GBC
-	COLOUR_MAGENTA,				// APP_MODE::GAME_FLASHOUT
+	COLOUR_MAGENTA,				// APP_MODE::GAME_PHOTON_SMASH
 };
 
 struct QueuedKey
 {
 	u8 keys[ 6 ] = {};
 	u8 modifiers = 0;
+};
+
+struct PhotonSmash
+{
+	APP_MODE prevMode;
+	PHOTON_SMASH_STATE state;
+	u8 level;
+	Colour colour;
+	u32 animationTime;
 };
 
 struct App
@@ -81,49 +154,241 @@ struct App
 	u32 updateTimer;
 	u32 updateRate;
 	queue_t keyQueue;
-	u8 flashoutLevel;
+	PhotonSmash photonSmash;
 };
 
 App app;
 RGBKeypad rgbKeypad;
 
-void app_switch_mode( APP_MODE newMode )
+static void toggle_light( u8 index )
 {
-	app.mode = newMode;
+	rgbKeypad.set_colour( index, app.photonSmash.colour, rgbKeypad.get_brightness( index ) == 0 ? 1.0f : 0 );
+}
 
-	rgbKeypad.clear();
+static bool photon_smash_solvability_check( u8 lights[ RGBKeypad::NUM_PADS ] )
+{
+	// Attempt to solve the state
+	for ( i32 index = 4; index < RGBKeypad::NUM_PADS; ++index )
+	{
+		if ( lights[ index - 4 ] )
+		{
+			lights[ index ] = !lights[ index ];
+			lights[ index - 4 ] = !lights[ index - 4 ];
 
+			// Check its not at the bottom edge
+			if ( index < 12 )
+			{
+				lights[ index + 4 ] = !lights[ index + 4 ];
+			}
+
+			// Check its not at the left edge
+			if ( index % 4 != 0 )
+			{
+				lights[ index - 1 ] = !lights[ index - 1 ];
+			}
+
+			// Check its not at the right edge
+			if ( ( index + 1 ) % 4 != 0 )
+			{
+				lights[ index + 1 ] = !lights[ index + 1 ];
+			}
+		}
+	}
+
+	// If any lights are still on it failed
+	for ( i32 index = 0; index < RGBKeypad::NUM_PADS; ++index )
+	{
+		if ( lights[ index ] )
+			return false;
+	}
+
+	return true;
+}
+
+static bool photon_smash_solvability_check()
+{
+	u8 lights[ RGBKeypad::NUM_PADS ];
+
+	// Copy the state
+	for ( i32 index = 0; index < RGBKeypad::NUM_PADS; ++index )
+	{
+		lights[ index ] = rgbKeypad.get_brightness( index ) != 0;
+	}
+
+	return photon_smash_solvability_check( lights );
+}
+
+static void default_selections()
+{
 	for ( i32 i = 0; i < APP_MODE::COUNT; ++i )
 	{
 		rgbKeypad.set_colour( i, colourThemes[ i ], 0.075f );
 	}
 
+	rgbKeypad.set_colour( app.mode, colourThemes[ app.mode ], 1.0f );
+}
+
+static void app_switch_mode( APP_MODE newMode )
+{
+	APP_MODE prevAppMode = app.mode;
+
+	app.mode = newMode;
+
+	rgbKeypad.clear();
+
 	switch ( newMode )
 	{
 	case PROGRAMMING_LBOE:
-		rgbKeypad.set_colour( newMode, colourThemes[ newMode ], 1.0f );
+		default_selections();
 
 		for ( i32 i = 4; i < 4; ++i )
 		{
-			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.25f );
+			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.2f );
 		}
 		break;
 
 	case PROGRAMMING_GBC:
-		rgbKeypad.set_colour( newMode, colourThemes[ newMode ], 1.0f );
+		default_selections();
 
 		for ( i32 i = 4; i < 4; ++i )
 		{
-			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.25f );
+			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.2f );
 		}
 		break;
 
-	case GAME_FLASHOUT:
+	case GAME_PHOTON_SMASH:
 		{
-			i32 lvl = app.flashoutLevel;
-			i32 startWithLigjts = min( static_cast<i32>( 15 ), irandom_range( 1 + lvl / 10, lvl / 3 ) );
-			// TODO : 
+			if ( prevAppMode != GAME_PHOTON_SMASH )
+			{
+				app.photonSmash.prevMode = prevAppMode;
+			}
+
+			app.photonSmash.state = PHOTON_SMASH_STATE::GAME;
+
+			app.photonSmash.colour =
+			{
+				static_cast<u8>( irandom( static_cast<u32>( 31 ) ) ),
+				static_cast<u8>( irandom( static_cast<u32>( 31 ) ) ),
+				static_cast<u8>( irandom( static_cast<i32>( 31 ) ) )
+			};
+
+			i32 lvl = app.photonSmash.level;
+
+			if ( lvl < ARRAY_LENGTH( photonSmashPredefinedLevels ) )
+			{
+				const PhotonSmashPredefinedLevel *predefinedLevel = &photonSmashPredefinedLevels[ lvl ];
+
+				for ( i32 i = 0, count = predefinedLevel->lightsCount; i < count; ++i )
+				{
+					rgbKeypad.set_colour( predefinedLevel->lights[ i ], app.photonSmash.colour, 0.75f );
+				}
+
+				// Check the predefined level can be completed, if not flash red
+				if ( !photon_smash_solvability_check() )
+				{
+					app.photonSmash.state = PHOTON_SMASH_STATE::UNSOLVABLE_ANIMATION;
+					app.photonSmash.animationTime = 0;
+				}
+			}
+			else
+			{
+				i32 startWithLigjts = min( static_cast<i32>( 15 ), irandom_range( 1 + lvl / 10, lvl / 3 ) );
+				u8 positions[ RGBKeypad::NUM_PADS ] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+				i32 positionsCount = 15;
+
+				while ( startWithLigjts-- > 0 )
+				{
+					i32 r = irandom_range( 0, positionsCount );
+					rgbKeypad.set_colour( positions[ r ], app.photonSmash.colour, 1.0f );
+					positions[ r ] = positions[ positionsCount-- ];
+				}
+
+				// Check if can be solved, if not, generate one in a safer method
+				if ( !photon_smash_solvability_check() )
+				{
+					rgbKeypad.clear();
+
+					i32 presses = min( static_cast<i32>( 50 ), irandom_range( 1 + lvl, lvl * 2 ) );
+
+					while ( presses-- > 0 )
+					{
+						toggle_light( static_cast<u8>( irandom( RGBKeypad::NUM_PADS ) ) );
+					}
+
+					bool oneLit = false;
+					for ( u64 i = 0; i < RGBKeypad::NUM_PADS; ++i )
+					{
+						if ( rgbKeypad.get_brightness( i ) != 0 )
+						{
+							oneLit = true;
+							break;
+						}
+					}
+
+					// If one wasn't lit or its not solvable, generate another
+					if ( !oneLit || !photon_smash_solvability_check() )
+					{
+						rgbKeypad.clear();
+
+						i32 position = irandom( RGBKeypad::NUM_PADS - 1 );
+						toggle_light( position );
+
+						position = ( position + irandom( RGBKeypad::NUM_PADS - 2 ) ) % RGBKeypad::NUM_PADS;
+						toggle_light( position );
+
+						if ( proc( 50 ) )
+						{
+							position = ( position + irandom( RGBKeypad::NUM_PADS - 2 ) ) % RGBKeypad::NUM_PADS;
+							toggle_light( position );
+
+							if ( proc( 25 ) )
+							{
+								position = ( position + irandom( RGBKeypad::NUM_PADS - 2 ) ) % RGBKeypad::NUM_PADS;
+								toggle_light( position );
+
+								if ( proc( 5 ) )
+								{
+									position = ( position + irandom( RGBKeypad::NUM_PADS - 2 ) ) % RGBKeypad::NUM_PADS;
+									toggle_light( position );
+
+									if ( proc( 1 ) )
+									{
+										position = ( position + irandom( RGBKeypad::NUM_PADS - 2 ) ) % RGBKeypad::NUM_PADS;
+										toggle_light( position );
+									}
+								}
+							}
+						}
+					}
+
+					// Check if it can be completed, if not, use a random predefined level
+					if ( !photon_smash_solvability_check() )
+					{
+						rgbKeypad.clear();
+
+						i32 randomPredefinedLevel = irandom( static_cast<i32>( ARRAY_LENGTH( photonSmashPredefinedLevels ) - 1 ) );
+
+						const PhotonSmashPredefinedLevel *predefinedLevel = &photonSmashPredefinedLevels[ randomPredefinedLevel ];
+
+						for ( i32 i = 0, count = predefinedLevel->lightsCount; i < count; ++i )
+						{
+							rgbKeypad.set_colour( predefinedLevel->lights[ i ], app.photonSmash.colour, 0.75f );
+						}
+					}
+
+					// Check it can be completed again, if not flash red
+					if ( !photon_smash_solvability_check() )
+					{
+						app.photonSmash.state = PHOTON_SMASH_STATE::UNSOLVABLE_ANIMATION;
+						app.photonSmash.animationTime = 0;
+					}
+				}
+			}
 		}
+		break;
+
+	default:
+		default_selections();
 		break;
 	}
 }
@@ -216,6 +481,26 @@ static void add_key( u8 modifiers, u8 key )
 	queue_try_add( &app.keyQueue, &qKey );
 }
 
+static void mode_selection( u16 keysPressed )
+{
+	if ( keysPressed & KEY_0 )
+	{
+		app_switch_mode( APP_MODE::PROGRAMMING_LBOE );
+	}
+	else if ( keysPressed & KEY_1 )
+	{
+		app_switch_mode( APP_MODE::PROGRAMMING_GBC );
+	}
+	else if ( keysPressed & KEY_2 )
+	{
+		app_switch_mode( APP_MODE::GAME_PHOTON_SMASH );
+	}
+	else if ( keysPressed & KEY_3 )
+	{
+		rgbKeypad.clear();
+	}
+}
+
 int main()
 {
 	{
@@ -245,11 +530,43 @@ int main()
 	app.hidTaskRate = app.hidTaskTimer;
 	app.updateTimer = 16;
 	app.updateRate = app.updateTimer;
-	app.flashoutLevel = 0;
+	app.photonSmash.level = 0;
 
 	queue_init( &app.keyQueue, sizeof( QueuedKey ), MAX_KEY_QUEUE_ELEMENTS );
 
 	app_switch_mode( APP_MODE::PROGRAMMING_GBC );
+
+	// In debug mode check all the predefined levels can be solved
+	#ifdef DEBUG
+		for ( i32 i = 0; i < ARRAY_LENGTH( photonSmashPredefinedLevels ); ++i )
+		{
+			u8 lights[ RGBKeypad::NUM_PADS ] = {};
+
+			const PhotonSmashPredefinedLevel *predefinedLevel = &photonSmashPredefinedLevels[ i ];
+
+			for ( i32 lightIdx = 0, count = predefinedLevel->lightsCount; lightIdx < count; ++lightIdx )
+			{
+				lights[ predefinedLevel->lights[ lightIdx ] ] = 1;
+			}
+
+			// Check the predefined level can be completed, if not flash red
+			if ( !photon_smash_solvability_check( lights ) )
+			{
+				rgbKeypad.clear();
+
+				rgbKeypad.set_colour( i, COLOUR_YELLOW, 1.0f );
+
+				i -= 16;
+
+				if ( i > 0 )
+				{
+					rgbKeypad.set_colour( i / 16, COLOUR_RED, 1.0f );
+				}
+
+				break;
+			}
+		}
+	#endif
 
 	u16 keysDownLast = 0;
 	u32 time = board_millis();
@@ -302,92 +619,171 @@ int main()
 
 			keysDownLast = keysDown;
 
-			if ( keysPressed & KEY_0 )
+			switch ( app.mode )
 			{
-				app_switch_mode( APP_MODE::PROGRAMMING_LBOE );
-			}
-			else if ( keysPressed & KEY_1 )
-			{
-				app_switch_mode( APP_MODE::PROGRAMMING_GBC );
-			}
-			else if ( keysPressed & KEY_2 )
-			{
-				app_switch_mode( APP_MODE::GAME_FLASHOUT );
-			}
-			else if ( keysPressed & KEY_3 )
-			{
-				rgbKeypad.clear();
-			}
-			else
-			{
-				switch ( app.mode )
+			case APP_MODE::PROGRAMMING_LBOE:
 				{
-				case APP_MODE::PROGRAMMING_LBOE:
-					{
-						constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
+					mode_selection( keysPressed );
 
-						if ( keysPressed & KEY_4 )
-						{
-							// Setup working on the LostBookOfElements game
-							add_key( modPrefix, HID_KEY_F1 );
-						}
-						else if ( keysPressed & KEY_5 )
-						{
-							// Compile LostBookOfElements Game
-							add_key( modPrefix, HID_KEY_F2 );
-						}
-						else if ( keysPressed & KEY_6 )
-						{
-							// Compile LostBookOfElements Engine+Game
-							add_key( modPrefix, HID_KEY_F3 );
-						}
-						else if ( keysPressed & KEY_7 )
-						{
-							// Open LostBookOfElements Game Folder
-							add_key( modPrefix, HID_KEY_F4 );
-						}
-					}
-					break;
+					constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
 
-				case APP_MODE::PROGRAMMING_GBC:
+					if ( keysPressed & KEY_4 )
 					{
-						constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
-
-						if ( keysPressed & KEY_4 )
-						{
-							// Setup working on the MoondustCompanions game
-							add_key( modPrefix, HID_KEY_F1 );
-						}
-						else if ( keysPressed & KEY_5 )
-						{
-							// Compile MoondustCompanions Game
-							add_key( modPrefix, HID_KEY_F2 );
-						}
-						else if ( keysPressed & KEY_6 )
-						{
-							// currently unused
-							add_key( modPrefix, HID_KEY_F3 );
-						}
-						else if ( keysPressed & KEY_7 )
-						{
-							// Open MoondustCompanions Game Folder
-							add_key( modPrefix, HID_KEY_F4 );
-						}
+						// Setup working on the LostBookOfElements game
+						add_key( modPrefix, HID_KEY_F1 );
 					}
-					break;
-
-				case APP_MODE::GAME_FLASHOUT:
-					if ( board_button_read() )
+					else if ( keysPressed & KEY_5 )
 					{
-						// Exit game
-						app_switch_mode( APP_MODE::COUNT );
+						// Compile LostBookOfElements Game
+						add_key( modPrefix, HID_KEY_F2 );
 					}
-					else if ( keysPressed )
+					else if ( keysPressed & KEY_6 )
 					{
-						// TODO change lights, check win condition
+						// Compile LostBookOfElements Engine+Game
+						add_key( modPrefix, HID_KEY_F3 );
 					}
-					break;
+					else if ( keysPressed & KEY_7 )
+					{
+						// Open LostBookOfElements Game Folder
+						add_key( modPrefix, HID_KEY_F4 );
+					}
 				}
+				break;
+
+			case APP_MODE::PROGRAMMING_GBC:
+				{
+					mode_selection( keysPressed );
+
+					constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
+
+					if ( keysPressed & KEY_4 )
+					{
+						// Setup working on the MoondustCompanions game
+						add_key( modPrefix, HID_KEY_F1 );
+					}
+					else if ( keysPressed & KEY_5 )
+					{
+						// Compile MoondustCompanions Game
+						add_key( modPrefix, HID_KEY_F2 );
+					}
+					else if ( keysPressed & KEY_6 )
+					{
+						// currently unused
+						add_key( modPrefix, HID_KEY_F3 );
+					}
+					else if ( keysPressed & KEY_7 )
+					{
+						// Open MoondustCompanions Game Folder
+						add_key( modPrefix, HID_KEY_F4 );
+					}
+				}
+				break;
+
+			case APP_MODE::GAME_PHOTON_SMASH:
+				if ( board_button_read() )
+				{
+					// Exit game
+					app_switch_mode( app.photonSmash.prevMode );
+				}
+				else
+				{
+					switch ( app.photonSmash.state )
+					{
+					case PHOTON_SMASH_STATE::GAME:
+						if ( keysPressed )
+						{
+							i32 index = 0;
+							while ( ( keysPressed & 1 ) == 0 )
+							{
+								++index;
+								keysPressed >>= 1;
+							}
+
+							toggle_light( index );
+
+							// Check its not at the top edge
+							if ( index > 3 )
+							{
+								toggle_light( index - 4 );
+							}
+
+							// Check its not at the bottom edge
+							if ( index < 12 )
+							{
+								toggle_light( index + 4 );
+							}
+
+							// Check its not at the left edge
+							if ( index % 4 != 0 )
+							{
+								toggle_light( index - 1 );
+							}
+
+							// Check its not at the right edge
+							if ( ( index + 1 ) % 4 != 0 )
+							{
+								toggle_light( index + 1 );
+							}
+
+							// Check win condition
+							bool won = true;
+
+							for ( u8 i = 0; i < RGBKeypad::NUM_PADS; ++i )
+							{
+								if ( rgbKeypad.get_brightness( i ) != 0 )
+								{
+									won = false;
+									break;
+								}
+							}
+
+							if ( won )
+							{
+								app.photonSmash.state = PHOTON_SMASH_STATE::WIN_ANIMATION;
+								app.photonSmash.level += 1;
+								app.photonSmash.animationTime = 0;
+							}
+						}
+						break;
+
+					case PHOTON_SMASH_STATE::WIN_ANIMATION:
+						{
+							if ( app.photonSmash.animationTime == 0 )
+							{
+								rgbKeypad.set_brightness( 1.0f );
+							}
+
+							app.photonSmash.animationTime += app.updateRate;
+
+							rgbKeypad.set_colour( ( ( app.photonSmash.animationTime / 250 ) & 1 ) ? COLOUR_GREEN : COLOUR_WHITE );
+
+							if ( app.photonSmash.animationTime >= 3 * 1000 )
+							{
+								app_switch_mode( APP_MODE::GAME_PHOTON_SMASH );
+							}
+						}
+						break;
+
+					case PHOTON_SMASH_STATE::UNSOLVABLE_ANIMATION:
+						{
+							if ( app.photonSmash.animationTime == 0 )
+							{
+								rgbKeypad.set_brightness( 1.0f );
+							}
+
+							app.photonSmash.animationTime += app.updateRate;
+
+							rgbKeypad.set_colour( ( ( app.photonSmash.animationTime / 250 ) & 1 ) ? COLOUR_RED : COLOUR_YELLOW );
+
+							if ( app.photonSmash.animationTime >= 3 * 1000 )
+							{
+								app_switch_mode( app.photonSmash.prevMode );
+							}
+						}
+						break;
+					}
+				}
+				break;
 			}
 
 			rgbKeypad.update();

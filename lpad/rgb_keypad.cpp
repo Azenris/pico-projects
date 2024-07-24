@@ -77,6 +77,11 @@ void RGBKeypad::set_brightness( f32 brightness )
 		ledData[ i * 4 ] = 0b11100000 | static_cast<u8>( brightness * 31.f );
 }
 
+f32 RGBKeypad::get_brightness( u8 index )
+{
+	return ( ledData[ index * 4 ] & 0b00011111 ) / 31.f;
+}
+
 void RGBKeypad::set_colour( u8 x, u8 y, u8 r, u8 g, u8 b )
 {
 	if ( x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT )
@@ -87,6 +92,18 @@ void RGBKeypad::set_colour( u8 x, u8 y, u8 r, u8 g, u8 b )
 	ledData[ offset + 1 ] = b;
 	ledData[ offset + 2 ] = g;
 	ledData[ offset + 3 ] = r;
+}
+
+void RGBKeypad::set_colour( u8 r, u8 g, u8 b )
+{
+	for ( i32 index = 0; index < NUM_PADS; ++index )
+	{
+		i32 offset = index * 4;
+
+		ledData[ offset + 1 ] = b;
+		ledData[ offset + 2 ] = g;
+		ledData[ offset + 3 ] = r;
+	}
 }
 
 void RGBKeypad::set_colour( u8 index, u8 r, u8 g, u8 b )
@@ -112,6 +129,18 @@ void RGBKeypad::set_colour( u8 index, u8 r, u8 g, u8 b, f32 brightness )
 	ledData[ offset + 1 ] = b;
 	ledData[ offset + 2 ] = g;
 	ledData[ offset + 3 ] = r;
+}
+
+void RGBKeypad::set_colour( Colour colour )
+{
+	for ( i32 index = 0; index < NUM_PADS; ++index )
+	{
+		i32 offset = index * 4;
+
+		ledData[ offset + 1 ] = colour.b;
+		ledData[ offset + 2 ] = colour.g;
+		ledData[ offset + 3 ] = colour.r;
+	}
 }
 
 void RGBKeypad::set_colour( u8 index, Colour colour )
