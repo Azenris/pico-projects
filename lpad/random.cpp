@@ -5,7 +5,41 @@
 // https://prng.di.unimi.it/splitmix64.c
 // https://xoshiro.di.unimi.it/xoshiro256starstar.c
 // https://xoshiro.di.unimi.it/xoshiro256plus.c
-// For the license see third_party/THIRD_PARTY_LICENSES
+// ------------------------------------------------------------------------------------
+// splitmix64
+// Source Code: https://prng.di.unimi.it/splitmix64.c
+// License:
+// ------------------------------------------------------------------------------------
+// Written in 2015 by Sebastiano Vigna (vigna@acm.org)
+// 
+// To the extent possible under law, the author has dedicated all copyright
+// and related and neighboring rights to this software to the public domain
+// worldwide. This software is distributed without any warranty.
+// ------------------------------------------------------------------------------------
+// 
+// ------------------------------------------------------------------------------------
+// xoshiro256starstar
+// Source Code: https://xoshiro.di.unimi.it/xoshiro256starstar.c
+// License:
+// ------------------------------------------------------------------------------------
+// Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+// 
+// To the extent possible under law, the author has dedicated all copyright
+// and related and neighboring rights to this software to the public domain
+// worldwide. This software is distributed without any warranty.
+// ------------------------------------------------------------------------------------
+// 
+// ------------------------------------------------------------------------------------
+// xoshiro256plus
+// Source Code: https://xoshiro.di.unimi.it/xoshiro256plus.c
+// License:
+// ------------------------------------------------------------------------------------
+// Written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+// 
+// To the extent possible under law, the author has dedicated all copyright
+// and related and neighboring rights to this software to the public domain
+// worldwide. This software is distributed without any warranty.
+// ------------------------------------------------------------------------------------
 
 #include "pico/stdlib.h"
 

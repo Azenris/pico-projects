@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -5,6 +6,7 @@
 #include "pico/stdlib.h"
 #include "pico/rand.h" 
 #include "pico/util/queue.h"
+#include "hardware/watchdog.h"
 #include "bsp/board.h"
 #include "tusb.h"
 #include "usb_descriptors.h"
@@ -103,6 +105,7 @@ constexpr u32 MAX_KEY_QUEUE_ELEMENTS = 16;
 
 constexpr Colour COLOUR_WHITE = { 31, 31, 31 };
 constexpr Colour COLOUR_RED = { 31, 0, 0 };
+constexpr Colour COLOUR_ORANGE = { 31, 15, 3 };
 constexpr Colour COLOUR_GREEN = { 0, 31, 0 };
 constexpr Colour COLOUR_BLUE = { 0, 0, 31 };
 constexpr Colour COLOUR_YELLOW = { 31, 31, 0 };
@@ -113,6 +116,8 @@ enum APP_MODE
 {
 	PROGRAMMING_LBOE,
 	PROGRAMMING_GBC,
+	PROGRAMMING_PICO_PROJECT,
+	KEYBINDS,
 	GAME_PHOTON_SMASH,
 	COUNT,
 };
@@ -128,13 +133,15 @@ constexpr Colour colourThemes[ APP_MODE::COUNT ] =
 {
 	COLOUR_AQUA,				// APP_MODE::PROGRAMMING_LBOE
 	COLOUR_GREEN,				// APP_MODE::PROGRAMMING_GBC
+	COLOUR_ORANGE,				// APP_MODE::PROGRAMMING_PICO_PROJECT
+	COLOUR_YELLOW,				// APP_MODE::KEYBINDS
 	COLOUR_MAGENTA,				// APP_MODE::GAME_PHOTON_SMASH
 };
 
 struct QueuedKey
 {
-	u8 keys[ 6 ] = {};
-	u8 modifiers = 0;
+	u8 keys[ 6 ];
+	u8 modifiers;
 };
 
 struct PhotonSmash
@@ -155,6 +162,7 @@ struct App
 	u32 updateRate;
 	queue_t keyQueue;
 	PhotonSmash photonSmash;
+	bool startResetTimer;
 };
 
 App app;
@@ -205,6 +213,12 @@ static bool photon_smash_solvability_check( u8 lights[ RGBKeypad::NUM_PADS ] )
 	return true;
 }
 
+static void system_reset()
+{
+	watchdog_enable( 100 , 1 );
+	while ( 1 );
+}
+
 static bool photon_smash_solvability_check()
 {
 	u8 lights[ RGBKeypad::NUM_PADS ];
@@ -225,7 +239,9 @@ static void default_selections()
 		rgbKeypad.set_colour( i, colourThemes[ i ], 0.075f );
 	}
 
-	rgbKeypad.set_colour( app.mode, colourThemes[ app.mode ], 1.0f );
+	rgbKeypad.set_colour( app.mode, colourThemes[ app.mode ], 0.25f );
+
+	rgbKeypad.set_colour( 7, COLOUR_RED, 0.15f );
 }
 
 static void app_switch_mode( APP_MODE newMode )
@@ -238,25 +254,22 @@ static void app_switch_mode( APP_MODE newMode )
 
 	switch ( newMode )
 	{
-	case PROGRAMMING_LBOE:
+	case APP_MODE::PROGRAMMING_LBOE:
+		[[fallthrough]];
+	case APP_MODE::PROGRAMMING_GBC:
+		[[fallthrough]];
+	case APP_MODE::PROGRAMMING_PICO_PROJECT:
+		[[fallthrough]];
+	case APP_MODE::KEYBINDS:
 		default_selections();
 
-		for ( i32 i = 4; i < 4; ++i )
+		for ( i32 i = 8; i < 16; ++i )
 		{
 			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.2f );
 		}
 		break;
 
-	case PROGRAMMING_GBC:
-		default_selections();
-
-		for ( i32 i = 4; i < 4; ++i )
-		{
-			rgbKeypad.set_colour( i, colourThemes[ newMode ], 0.2f );
-		}
-		break;
-
-	case GAME_PHOTON_SMASH:
+	case APP_MODE::GAME_PHOTON_SMASH:
 		{
 			if ( prevAppMode != GAME_PHOTON_SMASH )
 			{
@@ -418,11 +431,13 @@ u16 tud_hid_get_report_cb( u8 instance, u8 reportID, hid_report_type_t reportTyp
 // Invoked when device is mounted
 void tud_mount_cb()
 {
+	gpio_put( PICO_DEFAULT_LED_PIN, 1 );
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb()
 {
+	gpio_put( PICO_DEFAULT_LED_PIN, 0 );
 }
 
 // Invoked when usb bus is suspended
@@ -481,6 +496,42 @@ static void add_key( u8 modifiers, u8 key )
 	queue_try_add( &app.keyQueue, &qKey );
 }
 
+static void key_check( u8 modPrefix, u16 keysPressed )
+{
+	if ( keysPressed & KEY_8 )
+	{
+		add_key( modPrefix, HID_KEY_F13 );
+	}
+	else if ( keysPressed & KEY_9 )
+	{
+		add_key( modPrefix, HID_KEY_F14 );
+	}
+	else if ( keysPressed & KEY_10 )
+	{
+		add_key( modPrefix, HID_KEY_F15 );
+	}
+	else if ( keysPressed & KEY_11 )
+	{
+		add_key( modPrefix, HID_KEY_F16 );
+	}
+	else if ( keysPressed & KEY_12 )
+	{
+		add_key( modPrefix, HID_KEY_F17 );
+	}
+	else if ( keysPressed & KEY_13 )
+	{
+		add_key( modPrefix, HID_KEY_F18 );
+	}
+	else if ( keysPressed & KEY_14 )
+	{
+		add_key( modPrefix, HID_KEY_F19 );
+	}
+	else if ( keysPressed & KEY_15 )
+	{
+		add_key( modPrefix, HID_KEY_F20 );
+	}
+}
+
 static void mode_selection( u16 keysPressed )
 {
 	if ( keysPressed & KEY_0 )
@@ -493,9 +544,17 @@ static void mode_selection( u16 keysPressed )
 	}
 	else if ( keysPressed & KEY_2 )
 	{
-		app_switch_mode( APP_MODE::GAME_PHOTON_SMASH );
+		app_switch_mode( APP_MODE::PROGRAMMING_PICO_PROJECT );
 	}
 	else if ( keysPressed & KEY_3 )
+	{
+		app_switch_mode( APP_MODE::KEYBINDS );
+	}
+	else if ( keysPressed & KEY_4 )
+	{
+		app_switch_mode( APP_MODE::GAME_PHOTON_SMASH );
+	}
+	else if ( keysPressed & KEY_7 )
 	{
 		rgbKeypad.clear();
 	}
@@ -522,8 +581,10 @@ int main()
 
 	board_init();
 	tusb_init();
-
 	rgbKeypad.init();
+	gpio_init( PICO_DEFAULT_LED_PIN );
+
+	gpio_set_dir( PICO_DEFAULT_LED_PIN, GPIO_OUT );
 
 	app.mode = APP_MODE::COUNT;
 	app.hidTaskTimer = 8;
@@ -531,6 +592,7 @@ int main()
 	app.updateTimer = 16;
 	app.updateRate = app.updateTimer;
 	app.photonSmash.level = 0;
+	app.startResetTimer = false;
 
 	queue_init( &app.keyQueue, sizeof( QueuedKey ), MAX_KEY_QUEUE_ELEMENTS );
 
@@ -549,7 +611,7 @@ int main()
 				lights[ predefinedLevel->lights[ lightIdx ] ] = 1;
 			}
 
-			// Check the predefined level can be completed, if not flash red
+			// Check the predefined level can be completed
 			if ( !photon_smash_solvability_check( lights ) )
 			{
 				rgbKeypad.clear();
@@ -572,6 +634,8 @@ int main()
 	u32 time = board_millis();
 	u32 lastTime = time;
 	u32 timeDiff = 0;
+
+	watchdog_enable( 200, 1 );
 
 	while ( true )
 	{
@@ -614,6 +678,26 @@ int main()
 		{
 			app.updateTimer -= app.updateRate;
 
+			if ( !app.startResetTimer )
+			{
+				if ( board_button_read() )
+				{
+					app.startResetTimer = true;
+					watchdog_enable( 2 * 1000, 1 );
+				}
+
+				watchdog_update();
+			}
+			else
+			{
+				if ( !board_button_read() )
+				{
+					app.startResetTimer = false;
+					watchdog_enable( 200, 1 );
+					watchdog_update();
+				}
+			}
+
 			u16 keysDown = rgbKeypad.get_button_states();
 			u16 keysPressed = ~keysDownLast & keysDown;
 
@@ -624,58 +708,28 @@ int main()
 			case APP_MODE::PROGRAMMING_LBOE:
 				{
 					mode_selection( keysPressed );
-
-					constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
-
-					if ( keysPressed & KEY_4 )
-					{
-						// Setup working on the LostBookOfElements game
-						add_key( modPrefix, HID_KEY_F1 );
-					}
-					else if ( keysPressed & KEY_5 )
-					{
-						// Compile LostBookOfElements Game
-						add_key( modPrefix, HID_KEY_F2 );
-					}
-					else if ( keysPressed & KEY_6 )
-					{
-						// Compile LostBookOfElements Engine+Game
-						add_key( modPrefix, HID_KEY_F3 );
-					}
-					else if ( keysPressed & KEY_7 )
-					{
-						// Open LostBookOfElements Game Folder
-						add_key( modPrefix, HID_KEY_F4 );
-					}
+					key_check( KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
 				}
 				break;
 
 			case APP_MODE::PROGRAMMING_GBC:
 				{
 					mode_selection( keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
+				}
+				break;
 
-					constexpr u8 modPrefix = KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT;
+			case APP_MODE::PROGRAMMING_PICO_PROJECT:
+				{
+					mode_selection( keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
+				}
+				break;
 
-					if ( keysPressed & KEY_4 )
-					{
-						// Setup working on the MoondustCompanions game
-						add_key( modPrefix, HID_KEY_F1 );
-					}
-					else if ( keysPressed & KEY_5 )
-					{
-						// Compile MoondustCompanions Game
-						add_key( modPrefix, HID_KEY_F2 );
-					}
-					else if ( keysPressed & KEY_6 )
-					{
-						// currently unused
-						add_key( modPrefix, HID_KEY_F3 );
-					}
-					else if ( keysPressed & KEY_7 )
-					{
-						// Open MoondustCompanions Game Folder
-						add_key( modPrefix, HID_KEY_F4 );
-					}
+			case APP_MODE::KEYBINDS:
+				{
+					mode_selection( keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
 				}
 				break;
 
@@ -757,7 +811,7 @@ int main()
 
 							rgbKeypad.set_colour( ( ( app.photonSmash.animationTime / 250 ) & 1 ) ? COLOUR_GREEN : COLOUR_WHITE );
 
-							if ( app.photonSmash.animationTime >= 3 * 1000 )
+							if ( app.photonSmash.animationTime >= 1500 )
 							{
 								app_switch_mode( APP_MODE::GAME_PHOTON_SMASH );
 							}
@@ -775,7 +829,7 @@ int main()
 
 							rgbKeypad.set_colour( ( ( app.photonSmash.animationTime / 250 ) & 1 ) ? COLOUR_RED : COLOUR_YELLOW );
 
-							if ( app.photonSmash.animationTime >= 3 * 1000 )
+							if ( app.photonSmash.animationTime >= 1500 )
 							{
 								app_switch_mode( app.photonSmash.prevMode );
 							}

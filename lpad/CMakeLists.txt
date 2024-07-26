@@ -13,7 +13,7 @@ set( PICO_PLATFORM "rp2040" )
 set( PICO_TOOLCHAIN_PATH "${PICO_PATH}/gcc-arm-none-eabi/bin" )
 set( PICO_COMPILER "pico_arm_gcc" )
 set( FAMILY "rp2040" )
-set( PICO_BOARD "raspberry_pi_pico" )
+set( PICO_BOARD "pico" )
 set( CMAKE_BUILD_TYPE "Debug" )
 
 include( "${PICO_SDK_PATH}/external/pico_sdk_import.cmake" )
@@ -24,7 +24,7 @@ project( ${PROJECT} C CXX )
 
 pico_sdk_init()
 
-add_executable( ${PROJECT} main.cpp rgb_keypad.cpp random.cpp usb_descriptors.c )
+add_executable( ${PROJECT} main.cpp rgb_keypad.cpp random.cpp utility.cpp usb_descriptors.c )
 
 # Make sure TinyUSB can find tusb_config.h
 target_include_directories( ${PROJECT} PRIVATE ${CMAKE_CURRENT_LIST_DIR} )
@@ -37,6 +37,9 @@ target_link_libraries( ${PROJECT} PRIVATE pico_util )
 target_link_libraries( ${PROJECT} PRIVATE pico_rand )
 target_link_libraries( ${PROJECT} PRIVATE tinyusb_board )
 target_link_libraries( ${PROJECT} PRIVATE tinyusb_device )
+
+# if power is turned off and on quickly, it goes utf2 bootloader mode
+# target_link_libraries( ${PROJECT} PRIVATE pico_bootsel_via_double_reset )
 
 target_compile_definitions( ${PROJECT} PRIVATE "$<$<CONFIG:Debug>:DEBUG>$<$<CONFIG:Release>:NDEBUG>" )
 
