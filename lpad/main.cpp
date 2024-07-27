@@ -220,7 +220,7 @@ static bool photon_smash_solvability_check( u8 lights[ RGBKeypad::NUM_PADS ] )
 
 static void system_reset()
 {
-	watchdog_enable( 100 , 1 );
+	watchdog_enable( 100, 1 );
 	while ( 1 );
 }
 
@@ -503,7 +503,7 @@ static void add_key( u8 modifiers, u8 key )
 	queue_try_add( &app.keyQueue, &qKey );
 }
 
-static void key_check( u8 modPrefix, u16 keysPressed )
+static void key_check( u8 modPrefix, u16 keysPressed, u16 keysDown )
 {
 	if ( keysPressed & KEY_8 )
 	{
@@ -535,7 +535,14 @@ static void key_check( u8 modPrefix, u16 keysPressed )
 	}
 	else if ( keysPressed & KEY_15 )
 	{
-		add_key( modPrefix, HID_KEY_F20 );
+		if ( keysDown & KEY_12 )
+		{
+			system_reset();
+		}
+		else
+		{
+			add_key( modPrefix, HID_KEY_F20 );
+		}
 	}
 }
 
@@ -726,28 +733,28 @@ int main()
 			case APP_MODE::PROGRAMMING_LBOE:
 				{
 					mode_selection( keysPressed, keysDown );
-					key_check( KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed, keysDown );
 				}
 				break;
 
 			case APP_MODE::PROGRAMMING_GBC:
 				{
 					mode_selection( keysPressed, keysDown );
-					key_check( KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed, keysDown );
 				}
 				break;
 
 			case APP_MODE::PROGRAMMING_PICO_PROJECT:
 				{
 					mode_selection( keysPressed, keysDown );
-					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed, keysDown );
 				}
 				break;
 
 			case APP_MODE::KEYBINDS:
 				{
 					mode_selection( keysPressed, keysDown );
-					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
+					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed, keysDown );
 				}
 				break;
 
