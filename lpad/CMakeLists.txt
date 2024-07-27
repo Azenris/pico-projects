@@ -41,6 +41,11 @@ target_link_libraries( ${PROJECT} PRIVATE tinyusb_device )
 # if power is turned off and on quickly, it goes utf2 bootloader mode
 # target_link_libraries( ${PROJECT} PRIVATE pico_bootsel_via_double_reset )
 
+# pico_enable_stdio_usb( ${PROJECT} 1 )
+# pico_enable_stdio_uart( ${PROJECT} 0 )
+# 115200 baudrate 
+# stdio_init_all(); in main
+
 target_compile_definitions( ${PROJECT} PRIVATE "$<$<CONFIG:Debug>:DEBUG>$<$<CONFIG:Release>:NDEBUG>" )
 
 pico_add_extra_outputs( ${PROJECT} )

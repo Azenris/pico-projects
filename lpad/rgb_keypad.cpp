@@ -143,6 +143,19 @@ void RGBKeypad::set_colour( Colour colour )
 	}
 }
 
+void RGBKeypad::set_colour( Colour colour, f32 brightness )
+{
+	for ( i32 index = 0; index < NUM_PADS; ++index )
+	{
+		i32 offset = index * 4;
+
+		ledData[ offset + 0 ] = 0b11100000 | static_cast<u8>( brightness * 31.f );
+		ledData[ offset + 1 ] = colour.b;
+		ledData[ offset + 2 ] = colour.g;
+		ledData[ offset + 3 ] = colour.r;
+	}
+}
+
 void RGBKeypad::set_colour( u8 index, Colour colour )
 {
 	set_colour( index, colour.r, colour.g, colour.b );

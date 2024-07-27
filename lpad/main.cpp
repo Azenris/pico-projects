@@ -12,6 +12,7 @@
 #include "usb_descriptors.h"
 #include "rgb_keypad.h"
 #include "random.h"
+#include "utility.h"
 
 #define ARRAY_LENGTH( arr )		( sizeof( arr ) / sizeof( arr[ 0 ] ) )
 
@@ -105,7 +106,7 @@ constexpr u32 MAX_KEY_QUEUE_ELEMENTS = 16;
 
 constexpr Colour COLOUR_WHITE = { 31, 31, 31 };
 constexpr Colour COLOUR_RED = { 31, 0, 0 };
-constexpr Colour COLOUR_ORANGE = { 31, 15, 3 };
+constexpr Colour COLOUR_ORANGE = { 31, 16, 1 };
 constexpr Colour COLOUR_GREEN = { 0, 31, 0 };
 constexpr Colour COLOUR_BLUE = { 0, 0, 31 };
 constexpr Colour COLOUR_YELLOW = { 31, 31, 0 };
@@ -151,6 +152,7 @@ struct PhotonSmash
 	u8 level;
 	Colour colour;
 	u32 animationTime;
+	bool rainbowLevel;
 };
 
 struct App
@@ -163,6 +165,9 @@ struct App
 	queue_t keyQueue;
 	PhotonSmash photonSmash;
 	bool startResetTimer;
+	u32 rainbowColourTimer;
+	u8 rainbowColourUpdateRate;
+	Colour rainbowHSVColour;
 };
 
 App app;
@@ -170,7 +175,7 @@ RGBKeypad rgbKeypad;
 
 static void toggle_light( u8 index )
 {
-	rgbKeypad.set_colour( index, app.photonSmash.colour, rgbKeypad.get_brightness( index ) == 0 ? 1.0f : 0 );
+	rgbKeypad.set_colour( index, app.photonSmash.colour, rgbKeypad.get_brightness( index ) == 0 ? 0.65f : 0 );
 }
 
 static bool photon_smash_solvability_check( u8 lights[ RGBKeypad::NUM_PADS ] )
@@ -312,7 +317,7 @@ static void app_switch_mode( APP_MODE newMode )
 				while ( startWithLigjts-- > 0 )
 				{
 					i32 r = irandom_range( 0, positionsCount );
-					rgbKeypad.set_colour( positions[ r ], app.photonSmash.colour, 1.0f );
+					rgbKeypad.set_colour( positions[ r ], app.photonSmash.colour, 0.65f );
 					positions[ r ] = positions[ positionsCount-- ];
 				}
 
@@ -329,7 +334,7 @@ static void app_switch_mode( APP_MODE newMode )
 					}
 
 					bool oneLit = false;
-					for ( u64 i = 0; i < RGBKeypad::NUM_PADS; ++i )
+					for ( i32 i = 0; i < RGBKeypad::NUM_PADS; ++i )
 					{
 						if ( rgbKeypad.get_brightness( i ) != 0 )
 						{
@@ -397,6 +402,8 @@ static void app_switch_mode( APP_MODE newMode )
 					}
 				}
 			}
+
+			app.photonSmash.rainbowLevel = proc( 6 );
 		}
 		break;
 
@@ -431,13 +438,13 @@ u16 tud_hid_get_report_cb( u8 instance, u8 reportID, hid_report_type_t reportTyp
 // Invoked when device is mounted
 void tud_mount_cb()
 {
-	gpio_put( PICO_DEFAULT_LED_PIN, 1 );
+	// gpio_put( PICO_DEFAULT_LED_PIN, 1 );
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb()
 {
-	gpio_put( PICO_DEFAULT_LED_PIN, 0 );
+	// gpio_put( PICO_DEFAULT_LED_PIN, 0 );
 }
 
 // Invoked when usb bus is suspended
@@ -532,7 +539,7 @@ static void key_check( u8 modPrefix, u16 keysPressed )
 	}
 }
 
-static void mode_selection( u16 keysPressed )
+static void mode_selection( u16 keysPressed, u16 keysDown )
 {
 	if ( keysPressed & KEY_0 )
 	{
@@ -587,12 +594,15 @@ int main()
 	gpio_set_dir( PICO_DEFAULT_LED_PIN, GPIO_OUT );
 
 	app.mode = APP_MODE::COUNT;
-	app.hidTaskTimer = 8;
+	app.hidTaskTimer = 8;							// ms
 	app.hidTaskRate = app.hidTaskTimer;
-	app.updateTimer = 16;
+	app.updateTimer = 16;							// ms
 	app.updateRate = app.updateTimer;
 	app.photonSmash.level = 0;
 	app.startResetTimer = false;
+	app.rainbowColourTimer = 0;
+	app.rainbowColourUpdateRate = 1;				// updates before changing colour
+	app.rainbowHSVColour = { 0, 31, 31 };
 
 	queue_init( &app.keyQueue, sizeof( QueuedKey ), MAX_KEY_QUEUE_ELEMENTS );
 
@@ -703,32 +713,40 @@ int main()
 
 			keysDownLast = keysDown;
 
+			app.rainbowColourTimer += 1;
+
+			if ( app.rainbowColourTimer >= app.rainbowColourUpdateRate )
+			{
+				app.rainbowColourTimer -= app.rainbowColourUpdateRate;
+				app.rainbowHSVColour.r = ( app.rainbowHSVColour.r + 1 ) % 32;
+			}
+
 			switch ( app.mode )
 			{
 			case APP_MODE::PROGRAMMING_LBOE:
 				{
-					mode_selection( keysPressed );
+					mode_selection( keysPressed, keysDown );
 					key_check( KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
 				}
 				break;
 
 			case APP_MODE::PROGRAMMING_GBC:
 				{
-					mode_selection( keysPressed );
+					mode_selection( keysPressed, keysDown );
 					key_check( KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
 				}
 				break;
 
 			case APP_MODE::PROGRAMMING_PICO_PROJECT:
 				{
-					mode_selection( keysPressed );
+					mode_selection( keysPressed, keysDown );
 					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
 				}
 				break;
 
 			case APP_MODE::KEYBINDS:
 				{
-					mode_selection( keysPressed );
+					mode_selection( keysPressed, keysDown );
 					key_check( KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT, keysPressed );
 				}
 				break;
@@ -744,6 +762,11 @@ int main()
 					switch ( app.photonSmash.state )
 					{
 					case PHOTON_SMASH_STATE::GAME:
+						if ( app.photonSmash.rainbowLevel )
+						{
+							rgbKeypad.set_colour( hsv_to_rgb( app.rainbowHSVColour ) );
+						}
+
 						if ( keysPressed )
 						{
 							i32 index = 0;
@@ -804,14 +827,14 @@ int main()
 						{
 							if ( app.photonSmash.animationTime == 0 )
 							{
-								rgbKeypad.set_brightness( 1.0f );
+								rgbKeypad.set_brightness( 0.5f );
 							}
 
 							app.photonSmash.animationTime += app.updateRate;
 
 							rgbKeypad.set_colour( ( ( app.photonSmash.animationTime / 250 ) & 1 ) ? COLOUR_GREEN : COLOUR_WHITE );
 
-							if ( app.photonSmash.animationTime >= 1500 )
+							if ( app.photonSmash.animationTime >= 1000 )
 							{
 								app_switch_mode( APP_MODE::GAME_PHOTON_SMASH );
 							}
@@ -822,7 +845,7 @@ int main()
 						{
 							if ( app.photonSmash.animationTime == 0 )
 							{
-								rgbKeypad.set_brightness( 1.0f );
+								rgbKeypad.set_brightness( 0.5f );
 							}
 
 							app.photonSmash.animationTime += app.updateRate;
