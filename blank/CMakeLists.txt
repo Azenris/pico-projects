@@ -14,7 +14,6 @@ set( PICO_TOOLCHAIN_PATH "${PICO_PATH}/gcc-arm-none-eabi/bin" )
 set( PICO_COMPILER "pico_arm_gcc" )
 set( FAMILY "rp2040" )
 set( PICO_BOARD "pico" )
-set( CMAKE_BUILD_TYPE "Debug" )
 
 include( "${PICO_SDK_PATH}/external/pico_sdk_import.cmake" )
 
