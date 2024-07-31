@@ -587,7 +587,7 @@ int main()
 			get_rand_64(),
 			get_rand_64(),
 			get_rand_64(),
-			board_millis() * 0x1986,
+			get_rand_64(),
 		};
 
 		random_set_seed( seed );

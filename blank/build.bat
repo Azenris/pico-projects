@@ -16,6 +16,6 @@ IF NOT EXIST %buildDir% (
 )
 
 PUSHD %buildDir%
-cmake -S .. -DPICO_PATH="%picoPath%" -DCMAKE_BUILD_TYPE=Debug
+cmake -S .. -DPICO_PATH="%picoPath%"
 cmake --build .
 POPD
