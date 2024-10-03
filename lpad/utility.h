@@ -3,5 +3,5 @@
 
 #include "types.h"
 
-[[nodiscard]] Colour rgb_to_hsv( Colour colour );
-[[nodiscard]] Colour hsv_to_rgb( Colour colour );
+[[nodiscard]] Color rgb_to_hsv(Color color);
+[[nodiscard]] Color hsv_to_rgb(Color color);
