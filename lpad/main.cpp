@@ -448,7 +448,7 @@ void tud_umount_cb()
 }
 
 // Invoked when usb bus is suspended
-// remote_wakeup_en : if host allow us to perform remote wakeup
+// remoteWakeupEn : if host allow us to perform remote wakeup
 // Within 7ms, device must draw an average of current less than 2.5 mA from bus
 void tud_suspend_cb( bool remoteWakeupEn )
 {
@@ -474,9 +474,9 @@ void tud_hid_set_report_cb( u8 instance, u8 reportID, hid_report_type_t reportTy
 			if ( bufsize < 1 )
 				return;
 
-			u8 const kbd_leds = buffer[ 0 ];
+			u8 const keyboardLEDs = buffer[ 0 ];
 
-			if ( kbd_leds & KEYBOARD_LED_CAPSLOCK )	
+			if ( keyboardLEDs & KEYBOARD_LED_CAPSLOCK )	
 			{
 				// Capslock is on
 			}
